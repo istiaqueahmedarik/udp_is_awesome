@@ -11,7 +11,7 @@ import glob
 import pyudev
 
 UDP_IP = "239.0.0.16"
-BASE_UDP_PORT = 12345
+BASE_UDP_PORT = 1234
 MAX_CAMERAS = 10
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -182,6 +182,8 @@ def dashboard_mouse_callback(event, x, y, flags, param):
     global selected_port, ports_list
     dashboard_height = param['height']
     if event == cv2.EVENT_LBUTTONDOWN and x >= 900:
+        if not ports_list:  # Prevent division by zero
+            return
         thumb_height = dashboard_height // len(ports_list)
         index = y // thumb_height
         if index < len(ports_list):

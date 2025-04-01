@@ -52,27 +52,48 @@ def joystick_to_motor_speed(x, y):
     return int(left_speed), int(right_speed)
 
 
+def get_joystick_value(joystick):
+    # If joystick name contains 'extreme', process separately: return empty.
+    if "extreme" in joystick.get_name().lower():
+        return ""
+    return {
+        "leftY": joystick.get_axis(3),
+        "leftX": joystick.get_axis(2),
+        "rightY": joystick.get_axis(1),
+        "rightX": joystick.get_axis(0),
+        "gripper_of": joystick.get_button(2),
+        "gripper_on": joystick.get_button(3),
+        "base": joystick.get_axis(4),
+        "lifter_mode": joystick.get_axis(5),
+        "speed_mode": joystick.get_button(1),
+        "lifter": joystick.get_axis(6),
+        "arm": joystick.get_button(0)
+    }
+
+
 def read_joystick_data():
-    """Read joystick data and format it as a string."""
     global open, open1, cnt1, cnt2, flag3, l_state
 
     pygame.event.pump()
     joystick = pygame.joystick.Joystick(0)
 
-    # Read joystick axes
-    leftY = joystick.get_axis(3)
-    leftX = joystick.get_axis(2)
-    rightY = joystick.get_axis(1)
-    rightX = joystick.get_axis(0)
+    # Get joystick values using helper function.
+    joystick_values = get_joystick_value(joystick)
+    if joystick_values == "":
+        return ""
 
-    # Read joystick buttons
-    gripper_of = joystick.get_button(2)
-    gripper_on = joystick.get_button(3)
-    base = joystick.get_axis(4)
-    lifter_mode = joystick.get_axis(5)
-    speed_mode = joystick.get_button(1)
-    lifter = joystick.get_axis(6)
-    arm = joystick.get_button(0)
+    # Replace direct calls with values from joystick_values.
+    leftY = joystick_values["leftY"]
+    leftX = joystick_values["leftX"]
+    rightY = joystick_values["rightY"]
+    rightX = joystick_values["rightX"]
+    gripper_of = joystick_values["gripper_of"]
+    gripper_on = joystick_values["gripper_on"]
+    base = joystick_values["base"]
+    lifter_mode = joystick_values["lifter_mode"]
+    speed_mode = joystick_values["speed_mode"]
+    lifter = joystick_values["lifter"]
+    arm = joystick_values["arm"]
 
     # Map from -1 to 1 to 1000 to 2000
     leftY = int((leftY + 1) * 500 + 1000)
@@ -262,7 +283,8 @@ def read_joystick_data():
     # Clean up trailing comma if present
     if s[len(s) - 2] == ',':
         s = s[:len(s) - 2] + ']'
-
+    if (arm != 1500):
+        return "#"
     return s
 
 
