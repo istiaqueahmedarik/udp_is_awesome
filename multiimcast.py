@@ -100,8 +100,8 @@ def dashboard_mouse_callback(event, x, y, flags, param):
 def main():
     if len(sys.argv) < 3 or sys.argv[1] not in ["tx", "rx"]:
         print("Usage:")
-        print("  tx mode: imcast.py tx [camera] [port]")
-        print("  rx mode: imcast.py rx [port1,port2,...]")
+        print("  tx mode: multiimcast.py tx [camera] [port]")
+        print("  rx mode: multiimcast.py rx [port1,port2,...]")
         sys.exit(1)
     if sys.argv[1] == "tx":
         global camIdx

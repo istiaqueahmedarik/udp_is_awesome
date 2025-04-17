@@ -1,0 +1,3 @@
+Textual==0.1.0
+numpy==1.21.0
+rclpy==1.0.0
