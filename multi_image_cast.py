@@ -64,7 +64,7 @@ def receiver_thread(port):
     s.close()
 
 
-def dashboard_mouse_callback(event, x, y, flags, param):
+def dashboard_mouse_callback(event, x, y, _flags, param):
     global selected_port, ports_list
     if event == cv2.EVENT_LBUTTONDOWN and x >= 900:
         thumb_h = param['height'] // len(ports_list)
@@ -108,7 +108,7 @@ def main():
             t.start()
         selected_port = ports_list[0] if ports_list else None
 
-        W, H = 1200, 800
+        _W, H = 1200, 800
         cv2.namedWindow('Dashboard')
         cv2.setMouseCallback('Dashboard', dashboard_mouse_callback,
                              param={'height': H})
@@ -130,6 +130,13 @@ def main():
 
             right = np.vstack(thumbs) if thumbs else np.zeros(
                 (H, 300, 3), np.uint8)
+            # ensure right pane matches height H
+            h_right = right.shape[0]
+            if h_right < H:
+                pad = np.zeros((H - h_right, right.shape[1], 3), np.uint8)
+                right = np.vstack((right, pad))
+            elif h_right > H:
+                right = right[:H]
             dash = np.hstack((focus, right))
             cv2.imshow('Dashboard', dash)
             if cv2.waitKey(30) == 27:
