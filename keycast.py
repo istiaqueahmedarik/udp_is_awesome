@@ -6,7 +6,7 @@ import tty
 import termios
 
 UDP_IP = "239.0.0.16"
-UDP_PORT = 1234
+UDP_PORT = 5001
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

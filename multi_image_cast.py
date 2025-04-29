@@ -5,12 +5,18 @@ import struct
 import math
 import sys
 import threading
+import time
 
 #!/usr/bin/env python
 
 frames = {}
 selected_port = None
 ports_list = []
+
+# Bandwidth tracking
+bandwidth_lock = threading.Lock()
+total_bytes_received = 0
+bandwidth_mbps = 0.0
 
 
 class FrameSegment:
@@ -44,16 +50,19 @@ def dump_buffer(s):
 
 
 def receiver_thread(port):
-    global frames
+    global frames, total_bytes_received, bandwidth_lock
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(('0.0.0.0', port))
     dump_buffer(s)
     buf = b''
+
     while True:
         seg, _ = s.recvfrom(2**16)
         if not seg:
             break
+        with bandwidth_lock:
+            total_bytes_received += len(seg)
         cnt = seg[0]
         buf += seg[1:]
         if cnt == 1:
@@ -100,7 +109,7 @@ def main():
         sock.close()
 
     else:  # rx
-        global ports_list, selected_port
+        global ports_list, selected_port, bandwidth_mbps, total_bytes_received, bandwidth_lock
         ports_list = list(map(int, sys.argv[2].split(',')))
         for p in ports_list:
             t = threading.Thread(target=receiver_thread,
@@ -112,6 +121,20 @@ def main():
         cv2.namedWindow('Dashboard')
         cv2.setMouseCallback('Dashboard', dashboard_mouse_callback,
                              param={'height': H})
+
+        # Bandwidth calculation thread
+        def bandwidth_monitor():
+            global total_bytes_received, bandwidth_mbps, bandwidth_lock
+            prev_bytes = 0
+            while True:
+                time.sleep(1)
+                with bandwidth_lock:
+                    bytes_now = total_bytes_received
+                    total_bytes_received = 0
+                bandwidth_mbps = (bytes_now * 8) / \
+                    1_000_000  # bits to megabits
+
+        threading.Thread(target=bandwidth_monitor, daemon=True).start()
 
         while True:
             if selected_port in frames:
@@ -138,6 +161,18 @@ def main():
             elif h_right > H:
                 right = right[:H]
             dash = np.hstack((focus, right))
+
+            # Overlay bandwidth info
+            cv2.putText(
+                dash,
+                f"Total Bandwidth: {bandwidth_mbps:.2f} Mbps",
+                (10, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.2,
+                (0, 0, 255),
+                3
+            )
+
             cv2.imshow('Dashboard', dash)
             if cv2.waitKey(30) == 27:
                 break
