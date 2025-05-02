@@ -13,7 +13,6 @@ frames = {}
 selected_port = None
 ports_list = []
 
-# Bandwidth tracking
 bandwidth_lock = threading.Lock()
 total_bytes_received = 0
 bandwidth_mbps = 0.0
@@ -42,7 +41,6 @@ class FrameSegment:
 
 
 def dump_buffer(s):
-    # flush old packets until we get a part==1
     while True:
         seg, _ = s.recvfrom(2**16)
         if seg and seg[0] == 1:
