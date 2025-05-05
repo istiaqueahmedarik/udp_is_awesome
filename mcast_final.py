@@ -19,18 +19,15 @@ sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 mreq = struct.pack("4sl", socket.inet_aton(UDP_IP), socket.INADDR_ANY)
 sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
-camera_streams = {}  # { device_node: {'port': udp_port, 'thread': thread} }
+camera_streams = {}
 
-# For RX mode: shared frames and timestamps per UDP port
-frames = {}        # { port: image (numpy array) }
-last_update = {}   # { port: timestamp }
+frames = {}
+last_update = {}
 selected_port = None
-# RX dynamic ports are assumed to be in this range
-dynamic_ports = list(range(BASE_UDP_PORT, BASE_UDP_PORT + MAX_CAMERAS))
 
-###################################
-# UDP FrameSegment Class
-###################################
+# Port management
+available_ports = [BASE_UDP_PORT + i for i in range(MAX_CAMERAS)]
+used_ports = {}  # device_node -> port
 
 
 class FrameSegment(object):
@@ -58,14 +55,29 @@ class FrameSegment(object):
             array_pos_start = array_pos_end
             count -= 1
 
-###################################
-# TX Mode Functions
-###################################
+
+def get_next_available_port():
+    if available_ports:
+        return available_ports.pop(0)
+    return None
+
+
+def release_port(port):
+    if port is not None and port not in available_ports:
+        available_ports.append(port)
+        available_ports.sort()
 
 
 def stream_camera(device_node, udp_port):
     print(f"Starting stream for {device_node} on UDP port {udp_port}")
-    cap = cv2.VideoCapture(device_node)
+    cap = cv2.VideoCapture(device_node, cv2.CAP_V4L2)
+
+    # Configure for low CPU usage
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(
+        'M', 'J', 'P', 'G'))  # Use MJPEG
+    # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Low resolution width
+    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Low resolution height
+    cap.set(cv2.CAP_PROP_FPS, 8)  # Set to 15fps
     if not cap.isOpened():
         print(f"Cannot open camera {device_node}")
         return
@@ -81,25 +93,41 @@ def stream_camera(device_node, udp_port):
     print(f"Stopped stream for {device_node}")
 
 
-def detect_existing_cameras():
-    devices = glob.glob("/dev/video*")
-    return devices
-
-
-def add_camera(device_node):
+def try_add_camera(index):
+    device_node = f"/dev/video{index}"
     if device_node in camera_streams:
         return
-    udp_port = BASE_UDP_PORT + len(camera_streams)
+    udp_port = get_next_available_port()
+    if udp_port is None:
+        print("No available UDP ports for new camera.")
+        return
+    try:
+        cap = cv2.VideoCapture(device_node, cv2.CAP_V4L2)
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+        cap.set(cv2.CAP_PROP_FPS, 10)
+        if not cap.isOpened():
+            release_port(udp_port)
+            return  # Device does not exist or cannot be opened
+        cap.release()
+    except Exception:
+        release_port(udp_port)
+        return  # Device cannot be opened
     t = threading.Thread(target=stream_camera, args=(
         device_node, udp_port), daemon=True)
-    camera_streams[device_node] = {'port': udp_port, 'thread': t}
+    camera_streams[device_node] = {
+        'port': udp_port, 'thread': t, 'index': index}
+    used_ports[device_node] = udp_port
     print(f"Adding camera {device_node} on port {udp_port}")
     t.start()
 
 
-def remove_camera(device_node):
+def remove_camera_by_index(index):
+    device_node = f"/dev/video{index}"
     if device_node in camera_streams:
         print(f"Removing camera {device_node}")
+        port = camera_streams[device_node]['port']
+        release_port(port)
+        used_ports.pop(device_node, None)
         del camera_streams[device_node]
 
 
@@ -110,20 +138,28 @@ def monitor_new_cameras():
     print("Monitoring for new camera add/remove events...")
     for device in iter(monitor.poll, None):
         if device.action == 'add':
+            # Extract index from device_node
             dev_node = device.device_node
-            print(f"New camera detected: {dev_node}")
-            add_camera(dev_node)
+            if dev_node.startswith("/dev/video"):
+                try:
+                    idx = int(dev_node.replace("/dev/video", ""))
+                    try_add_camera(idx)
+                except Exception:
+                    pass
         elif device.action == 'remove':
             dev_node = device.device_node
-            print(f"Camera removed: {dev_node}")
-            remove_camera(dev_node)
+            if dev_node.startswith("/dev/video"):
+                try:
+                    idx = int(dev_node.replace("/dev/video", ""))
+                    remove_camera_by_index(idx)
+                except Exception:
+                    pass
 
 
 def tx_mode():
-    existing = detect_existing_cameras()
-    print("Existing cameras:", existing)
-    for dev in existing:
-        add_camera(dev)
+    # Try all possible indices
+    for idx in range(MAX_CAMERAS * 2):
+        try_add_camera(idx)
     monitor_thread = threading.Thread(target=monitor_new_cameras, daemon=True)
     monitor_thread.start()
     try:
@@ -132,10 +168,6 @@ def tx_mode():
     except KeyboardInterrupt:
         print("Stopping TX mode.")
         sock.close()
-
-###################################
-# RX Mode Functions (Dynamic)
-###################################
 
 
 def dump_buffer(s):
@@ -146,7 +178,7 @@ def dump_buffer(s):
             break
 
 
-def receiver_thread(port):
+def receiver_thread(port, idx):
     global frames, last_update
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -172,8 +204,8 @@ def receiver_thread(port):
             dat += seg[1:]
             img = cv2.imdecode(np.frombuffer(dat, dtype=np.uint8), 1)
             if img is not None:
-                frames[port] = img
-                last_update[port] = time.time()
+                frames[idx] = img
+                last_update[idx] = time.time()
             dat = b''
     s.close()
 
@@ -192,9 +224,16 @@ def dashboard_mouse_callback(event, x, y, flags, param):
 
 def rx_mode_dynamic():
     global selected_port, ports_list, frames, last_update
-    for port in dynamic_ports:
-        t = threading.Thread(target=receiver_thread, args=(port,), daemon=True)
+    # Discover active ports by listening for a short period
+    port_threads = []
+    port_idx_map = {}
+    for i in range(MAX_CAMERAS):
+        port = BASE_UDP_PORT + i
+        t = threading.Thread(target=receiver_thread,
+                             args=(port, i), daemon=True)
         t.start()
+        port_threads.append(t)
+        port_idx_map[port] = i
     selected_port = None
     dash_width, dash_height = 1200, 800
     cv2.namedWindow('Dashboard')
@@ -204,8 +243,8 @@ def rx_mode_dynamic():
 
     while True:
         now = time.time()
-        ports_list = [port for port in dynamic_ports if port in last_update and (
-            now - last_update[port]) < TIMEOUT]
+        ports_list = [i for i in range(MAX_CAMERAS) if i in last_update and (
+            now - last_update[i]) < TIMEOUT]
         if selected_port not in ports_list and ports_list:
             selected_port = ports_list[0]
         if selected_port in frames:
@@ -215,12 +254,12 @@ def rx_mode_dynamic():
             focus = np.zeros((dash_height, dash_width, 3), dtype=np.uint8)
         thumbnails = []
         thumb_h = dash_height // (len(ports_list) if ports_list else 1)
-        for port in ports_list:
-            if port in frames:
-                thumb = cv2.resize(frames[port], (300, thumb_h))
+        for idx in ports_list:
+            if idx in frames:
+                thumb = cv2.resize(frames[idx], (300, thumb_h))
             else:
                 thumb = np.zeros((thumb_h, 300, 3), dtype=np.uint8)
-            cv2.putText(thumb, f"Port {port}", (10, 30),
+            cv2.putText(thumb, f"Index {idx}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             thumbnails.append(thumb)
         if thumbnails:
@@ -233,10 +272,6 @@ def rx_mode_dynamic():
         if cv2.waitKey(30) & 0xFF == 27:
             break
     cv2.destroyAllWindows()
-
-###################################
-# Main entry point
-###################################
 
 
 def main():

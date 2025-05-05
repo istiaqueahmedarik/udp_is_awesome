@@ -7,12 +7,12 @@ import pygame
 import keyboard
 import threading
 
-# Unicast settings
-UDP_IP = "192.168.1.165"
-UDP_PORT = 5001  # Default port, can be overridden with command line arg
+# Multicast settings
+UDP_IP = "239.0.0.18"
+UDP_PORT = 5010  # Default port, can be overridden with command line arg
 
 # Create UDP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
 # Constants
@@ -293,6 +293,10 @@ def transmitter_mode(port):
     """Transmit joystick data over UDP."""
     print(f"Starting joystick transmitter on {UDP_IP}:{port}")
 
+    # Set multicast TTL to 1
+    ttl = struct.pack('b', 1)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+
     # Initialize pygame
     pygame.init()
     pygame.joystick.init()
@@ -326,8 +330,12 @@ def receiver_mode(port):
     """Receive joystick data over UDP."""
     print(f"Starting joystick receiver on {UDP_IP}:{port}")
 
-    # Bind to all interfaces on the given port for unicast
+    # Bind to all interfaces on the given port for multicast
     sock.bind(('', port))
+
+    # Join multicast group
+    mreq = struct.pack("4sl", socket.inet_aton(UDP_IP), socket.INADDR_ANY)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
     try:
         while True:
