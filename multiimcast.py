@@ -35,7 +35,7 @@ class FrameSegment(object):
 
     def udp_frame(self, img):
         compress_img = cv2.imencode('.jpg', img)[1]
-        params = [int(cv2.IMWRITE_JPEG_QUALITY), 50]
+        params = [int(cv2.IMWRITE_JPEG_QUALITY), 100]
         compress_img = cv2.imencode('.jpg', img, params)[1]
 
         dat = compress_img.tostring()
@@ -109,7 +109,17 @@ def main():
         global UDP_PORT
         UDP_PORT = int(sys.argv[3])
         fs = FrameSegment(sock, UDP_PORT)
-        cap = cv2.VideoCapture(camIdx)
+        # cap = cv2.VideoCapture(camIdx)
+
+        cap = cv2.VideoCapture(camIdx, cv2.CAP_V4L2)
+
+        # Configure for low CPU usage
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(
+            'M', 'J', 'P', 'G'))  # Use MJPEG
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Low resolution width
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Low resolution height
+        cap.set(cv2.CAP_PROP_FPS, 10)  # Set to 15fps
+
         if not cap.isOpened():
             print("Cannot open camera")
             sys.exit(1)

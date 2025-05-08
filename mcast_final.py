@@ -10,14 +10,14 @@ import threading
 import glob
 import pyudev
 
-UDP_IP = "239.0.0.16"
+DEFAULT_UDP_IP = "192.168.1.8"
+UDP_IP = DEFAULT_UDP_IP  # Will be overridden if parameter provided
 BASE_UDP_PORT = 1234
 MAX_CAMERAS = 10
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-mreq = struct.pack("4sl", socket.inet_aton(UDP_IP), socket.INADDR_ANY)
-sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+# Removed multicast configuration
 
 camera_streams = {}
 
@@ -34,10 +34,10 @@ class FrameSegment(object):
     MAX_DGRAM = 2**16
     MAX_IMAGE_DGRAM = MAX_DGRAM - 64
 
-    def __init__(self, sock, port, addr=UDP_IP):
+    def __init__(self, sock, port, addr=None):
         self.s = sock
         self.port = port
-        self.addr = addr
+        self.addr = UDP_IP if addr is None else addr
 
     def udp_frame(self, img):
         quality = 100
@@ -182,10 +182,9 @@ def receiver_thread(port, idx):
     global frames, last_update
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    mreq = struct.pack("4sl", socket.inet_aton(UDP_IP), socket.INADDR_ANY)
-    s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    # Removed multicast configuration
     try:
-        s.bind((UDP_IP, port))
+        s.bind(('', port))  # Bind to all interfaces for receiving
     except Exception as e:
         print(f"Could not bind to port {port}: {e}")
         return
@@ -275,11 +274,23 @@ def rx_mode_dynamic():
 
 
 def main():
+    global UDP_IP
+
+    # Parse command line args
     if len(sys.argv) < 2 or sys.argv[1] not in ["tx", "rx"]:
         print("Usage:")
-        print("  TX mode: script.py tx")
-        print("  RX mode (dynamic): script.py rx")
+        print("  TX mode: script.py tx [ip_address]")
+        print("  RX mode (dynamic): script.py rx [ip_address]")
         sys.exit(1)
+
+    # Check for IP address parameter
+    if len(sys.argv) > 2:
+        UDP_IP = sys.argv[2]
+    else:
+        UDP_IP = DEFAULT_UDP_IP
+
+    print(f"Using IP address: {UDP_IP}")
+
     if sys.argv[1] == "tx":
         tx_mode()
     elif sys.argv[1] == "rx":
