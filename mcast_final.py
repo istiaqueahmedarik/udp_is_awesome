@@ -15,9 +15,9 @@ UDP_IP = DEFAULT_UDP_IP  # Will be overridden if parameter provided
 BASE_UDP_PORT = 1234
 MAX_CAMERAS = 10
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# Removed multicast configuration
+# Remove global sock for streaming
+# sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
 camera_streams = {}
 
@@ -40,7 +40,7 @@ class FrameSegment(object):
         self.addr = UDP_IP if addr is None else addr
 
     def udp_frame(self, img):
-        quality = 100
+        quality = 70  # Lowered from 100 to 70 for faster streaming
         params = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
         compress_img = cv2.imencode('.jpg', img, params)[1]
         dat = compress_img.tobytes()
@@ -70,18 +70,21 @@ def release_port(port):
 
 def stream_camera(device_node, udp_port):
     print(f"Starting stream for {device_node} on UDP port {udp_port}")
-    cap = cv2.VideoCapture(device_node, cv2.CAP_V4L2)
+    # Create a dedicated socket for this camera
+    cam_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    cam_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-    # Configure for low CPU usage
+    cap = cv2.VideoCapture(device_node, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(
         'M', 'J', 'P', 'G'))  # Use MJPEG
-    # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Low resolution width
-    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Low resolution height
-    cap.set(cv2.CAP_PROP_FPS, 8)  # Set to 15fps
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Set low resolution width
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Set low resolution height
+    cap.set(cv2.CAP_PROP_FPS, 8)  # Set to 8fps
     if not cap.isOpened():
         print(f"Cannot open camera {device_node}")
+        cam_sock.close()
         return
-    fs = FrameSegment(sock, udp_port)
+    fs = FrameSegment(cam_sock, udp_port)
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -90,6 +93,7 @@ def stream_camera(device_node, udp_port):
         fs.udp_frame(frame)
         # time.sleep(0.03)
     cap.release()
+    cam_sock.close()
     print(f"Stopped stream for {device_node}")
 
 
@@ -104,7 +108,9 @@ def try_add_camera(index):
     try:
         cap = cv2.VideoCapture(device_node, cv2.CAP_V4L2)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-        cap.set(cv2.CAP_PROP_FPS, 10)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Set low resolution width
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # Set low resolution height
+        cap.set(cv2.CAP_PROP_FPS, 8)  # Set to 8fps
         if not cap.isOpened():
             release_port(udp_port)
             return  # Device does not exist or cannot be opened
