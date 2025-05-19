@@ -52,37 +52,23 @@ mode = 0
 
 
 def get_joystick_value(joystick):
-    global mode
-    if joystick.get_button(11) == 1:
-        if mode == 0:
-            mode = 1
-        else:
-            mode = 0
 
-    print("Mode:", mode)
-    grip = 0
-    if (joystick.get_button(0) == 1):
-        grip = 1
-    if (joystick.get_button(1) == 1):
-        grip = -1
     ghora = 0
     if (joystick.get_button(4) == 1):
         ghora = 1
-    if (joystick.get_button(5) == 1):
+    if (joystick.get_button(4) == 1 and joystick.get_button(2) == 1):
         ghora = -1
     upor = 0
-    if (joystick.get_button(2) == 1):
-        upor = 1
     if (joystick.get_button(3) == 1):
+        upor = 1
+    if (joystick.get_button(3) == 1 and joystick.get_button(2) == 1):
         upor = -1
 
     return {
-        "leftY":  joystick.get_axis(0),
-        "leftX": joystick.get_axis(1),
-        "base": joystick.get_axis(2),
-        "grip": grip,
-        "ghora": ghora,
-        "upor": upor,
+        "leftY": joystick.get_axis(3),
+        "leftX": joystick.get_axis(2),
+        "rightY": joystick.get_axis(1),
+        "rightX":  joystick.get_axis(0),
     }
 
 
@@ -104,84 +90,51 @@ def read_joystick_data():
     if joystick_values == "":
         return ""
 
-    # Replace direct calls with values from joystick_values.
-    leftY = joystick_values["leftY"]
-    leftX = joystick_values["leftX"]
+    rightY = joystick_values["rightY"]
+    rightX = joystick_values["rightX"]
 
-    # Map from -1 to 1 to 1000 to 2000
-    leftY = int((leftY + 1) * 500 + 1000)
-    leftX = int((leftX + 1) * 500 + 1000)
+    rightY = int((rightY + 1) * 500 + 1000)
+    rightX = int((rightX + 1) * 500 + 1000)
 
-    # Apply 50-value radius deadzone to all axes
-    leftY = apply_deadzone(leftY)
-    leftX = apply_deadzone(leftX)
-    grip = joystick_values["grip"]
-    ghora = joystick_values["ghora"]
-    upor = joystick_values["upor"]
-    base = joystick_values["base"]
+    rightY = apply_deadzone(rightY)
+    rightX = apply_deadzone(rightX)
 
     # Handle 'p' key for toggle
 
     # Calculate motor speeds
+    (leftMotor, rightMotor) = (rightX, rightY)
 
     # Format data as string
     s = "["
-    if (abs(1500-leftX) > DEADZONE):
-        flag3[2] = 0
-        s += "2" + str(leftX) + ","
-    elif flag3[2] == 0:
-        flag3[2] = 1
-        s += "2" + str(1500) + ","
-    else:
-        s += "2" + str(1500) + ","
-    if (abs(1500-leftY) > DEADZONE):
-        flag3[3] = 0
-        s += "3" + str(leftY) + ","
-    elif flag3[3] == 0:
-        flag3[3] = 1
-        s += "3" + str(1500) + ","
-    else:
-        s += "3" + str(1500) + ","
 
-    if (abs(1500-grip) > DEADZONE):
-        flag3[4] = 0
-        s += "4" + str(grip) + ","
-    elif flag3[4] == 0:
-        flag3[4] = 1
-        s += "4" + str(1500) + ","
+    # Add motor values with flag checking for changes
+    if abs(1500 - leftMotor) > DEADZONE:
+        flag3[0] = 0
+        s += "0" + str(leftMotor) + ","
+    elif flag3[0] == 0:
+        flag3[0] = 1
+        s += "0" + str(1500) + ","
     else:
-        s += "4" + str(1500) + ","
-    if (abs(1500-ghora) > DEADZONE):
-        flag3[5] = 0
-        s += "5" + str(ghora) + ","
-    elif flag3[5] == 0:
-        flag3[5] = 1
-        s += "5" + str(1500) + ","
+        s += "0" + str(1500) + ","
+
+    if abs(1500 - rightMotor) > DEADZONE:
+        flag3[1] = 0
+        s += "1" + str(rightMotor)
+    elif flag3[1] == 0:
+        flag3[1] = 1
+        s += "1" + str(1500)
     else:
-        s += "5" + str(1500) + ","
-    if (abs(1500-upor) > DEADZONE):
-        flag3[6] = 0
-        s += "6" + str(upor) + ","
-    elif flag3[6] == 0:
-        flag3[6] = 1
-        s += "6" + str(1500) + ","
-    else:
-        s += "6" + str(1500) + ","
-    if (abs(1500-base) > DEADZONE):
-        flag3[7] = 0
-        s += "7" + str(base) + ","
-    elif flag3[7] == 0:
-        flag3[7] = 1
-        s += "7" + str(1500) + ","
-    else:
-        s += "7" + str(1500) + ","
+        s += "1" + str(1500)
+
     s += "]"
 
     # Clean up trailing comma if present
     if s[len(s) - 2] == ',':
         s = s[:len(s) - 2] + ']'
-    print(s)
-    arm = 2000
+    if (joystick.get_button(0) == 1):
+        arm = 2000
+    else:
+        arm = 1500
     if (arm == 1500):
         return "#"
     return "JOYSTICK:"+s
@@ -205,7 +158,7 @@ def transmitter_mode(port):
         print("No joystick detected.")
         sys.exit(1)
 
-    joystick = pygame.joystick.Joystick(1)
+    joystick = pygame.joystick.Joystick(0)
     joystick.init()
 
     print("Initialized joystick:", joystick.get_name())

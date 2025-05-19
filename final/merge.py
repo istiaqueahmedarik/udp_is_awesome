@@ -52,29 +52,48 @@ mode = 0
 
 
 def get_joystick_value(joystick):
-    global mode
-    if joystick.get_button(11) == 1:
-        if mode == 0:
-            mode = 1
-        else:
-            mode = 0
+
+    ghora = 0
+    if (joystick.get_button(4) == 1):
+        ghora = 1
+    if (joystick.get_button(4) == 1 and joystick.get_button(2) == 1):
+        ghora = -1
+    upor = 0
+    if (joystick.get_button(3) == 1):
+        upor = 1
+    if (joystick.get_button(3) == 1 and joystick.get_button(2) == 1):
+        upor = -1
+
+    return {
+        "leftY": joystick.get_axis(3),
+        "leftX": joystick.get_axis(2),
+        "rightY": joystick.get_axis(1),
+        "rightX":  joystick.get_axis(0),
+    }
+
+
+mode = 0
+
+
+def get_joystick_value1(joystick):
+    mode = joystick.get_button(9)
 
     print("Mode:", mode)
     grip = 0
-    if (joystick.get_button(0) == 1):
-        grip = 1
-    if (joystick.get_button(1) == 1):
+    if (joystick.get_button(2) == 1):
         grip = -1
+    if (joystick.get_button(3) == 1):
+        grip = 1
     ghora = 0
     if (joystick.get_button(4) == 1):
         ghora = 1
     if (joystick.get_button(5) == 1):
         ghora = -1
     upor = 0
-    if (joystick.get_button(2) == 1):
-        upor = 1
-    if (joystick.get_button(3) == 1):
+    if (joystick.get_button(0) == 1):
         upor = -1
+    if (joystick.get_button(1) == 1):
+        upor = 1
 
     return {
         "leftY":  joystick.get_axis(0),
@@ -86,7 +105,7 @@ def get_joystick_value(joystick):
     }
 
 
-def apply_deadzone(value, center=1500, radius=200):
+def apply_deadzone(value, center=1500, radius=100):
     """Apply a deadzone around the center value."""
     if abs(value - center) <= radius:
         return center
@@ -98,34 +117,79 @@ def read_joystick_data():
 
     pygame.event.pump()
     joystick = pygame.joystick.Joystick(0)
+    arm = pygame.joystick.Joystick(1)
 
     # Get joystick values using helper function.
     joystick_values = get_joystick_value(joystick)
-    if joystick_values == "":
-        return ""
+    joystick_values1 = get_joystick_value1(arm)
 
-    # Replace direct calls with values from joystick_values.
-    leftY = joystick_values["leftY"]
-    leftX = joystick_values["leftX"]
+    rightY = joystick_values["rightY"]
+    rightX = joystick_values["rightX"]
 
+    rightY = int((rightY + 1) * 500 + 1000)
+    rightX = int((rightX + 1) * 500 + 1000)
+
+    leftY = joystick_values1["leftY"]
+    leftX = joystick_values1["leftX"]
+
+    grip = joystick_values1["grip"]
+    ghora = joystick_values1["ghora"]
+    upor = joystick_values1["upor"]
+    base = joystick_values1["base"]
     # Map from -1 to 1 to 1000 to 2000
     leftY = int((leftY + 1) * 500 + 1000)
     leftX = int((leftX + 1) * 500 + 1000)
+    grip = int((grip + 1) * 500 + 1000)
+    ghora = int((ghora + 1) * 500 + 1000)
+    upor = int((upor + 1) * 500 + 1000)
+    base = int((base + 1) * 500 + 1000)
+
+    # patch
+    if (base > 1500):
+        base = 1500-(abs(1500-base))
+    else:
+        base = 1500+(abs(1500-base))
+
+    if (leftX > 1500):
+        leftX = 1500-(abs(1500-leftX))
+    else:
+        leftX = 1500+(abs(1500-leftX))
 
     # Apply 50-value radius deadzone to all axes
     leftY = apply_deadzone(leftY)
     leftX = apply_deadzone(leftX)
-    grip = joystick_values["grip"]
-    ghora = joystick_values["ghora"]
-    upor = joystick_values["upor"]
-    base = joystick_values["base"]
+    base = apply_deadzone(base, center=1500, radius=100)
+    mode = arm.get_button(9)
+    if (mode == 0):
+        base = 1500
 
     # Handle 'p' key for toggle
 
     # Calculate motor speeds
+    (leftMotor, rightMotor) = (rightX, rightY)
 
     # Format data as string
     s = "["
+
+    # Add motor values with flag checking for changes
+    if abs(1500 - leftMotor) > DEADZONE:
+        flag3[0] = 0
+        s += "0" + str(leftMotor) + ","
+    elif flag3[0] == 0:
+        flag3[0] = 1
+        s += "0" + str(1500) + ","
+    else:
+        s += "0" + str(1500) + ","
+
+    if abs(1500 - rightMotor) > DEADZONE:
+        flag3[1] = 0
+        s += "1" + str(rightMotor) + ","
+    elif flag3[1] == 0:
+        flag3[1] = 1
+        s += "1" + str(1500) + ","
+    else:
+        s += "1" + str(1500) + ","
+
     if (abs(1500-leftX) > DEADZONE):
         flag3[2] = 0
         s += "2" + str(leftX) + ","
@@ -167,21 +231,25 @@ def read_joystick_data():
         s += "6" + str(1500) + ","
     else:
         s += "6" + str(1500) + ","
+
     if (abs(1500-base) > DEADZONE):
         flag3[7] = 0
-        s += "7" + str(base) + ","
+        s += "7" + str(base)
     elif flag3[7] == 0:
         flag3[7] = 1
-        s += "7" + str(1500) + ","
+        s += "7" + str(1500)
     else:
-        s += "7" + str(1500) + ","
+        s += "7" + str(1500)
+
     s += "]"
 
     # Clean up trailing comma if present
     if s[len(s) - 2] == ',':
         s = s[:len(s) - 2] + ']'
-    print(s)
-    arm = 2000
+    if (joystick.get_button(0) == 1):
+        arm = 2000
+    else:
+        arm = 1500
     if (arm == 1500):
         return "#"
     return "JOYSTICK:"+s
@@ -205,7 +273,7 @@ def transmitter_mode(port):
         print("No joystick detected.")
         sys.exit(1)
 
-    joystick = pygame.joystick.Joystick(1)
+    joystick = pygame.joystick.Joystick(0)
     joystick.init()
 
     print("Initialized joystick:", joystick.get_name())

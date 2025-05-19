@@ -52,35 +52,25 @@ mode = 0
 
 
 def get_joystick_value(joystick):
-    global mode
-    if joystick.get_button(11) == 1:
-        if mode == 0:
-            mode = 1
-        else:
-            mode = 0
 
-    print("Mode:", mode)
-    grip = 0
-    if (joystick.get_button(0) == 1):
-        grip = 1
-    if (joystick.get_button(1) == 1):
-        grip = -1
     ghora = 0
     if (joystick.get_button(4) == 1):
         ghora = 1
-    if (joystick.get_button(5) == 1):
+    if (joystick.get_button(4) == 1 and joystick.get_button(2) == 1):
         ghora = -1
     upor = 0
-    if (joystick.get_button(2) == 1):
-        upor = 1
     if (joystick.get_button(3) == 1):
+        upor = 1
+    if (joystick.get_button(3) == 1 and joystick.get_button(2) == 1):
         upor = -1
 
     return {
-        "leftY":  joystick.get_axis(0),
-        "leftX": joystick.get_axis(1),
-        "base": joystick.get_axis(2),
-        "grip": grip,
+        "leftY": joystick.get_axis(3),
+        "leftX": joystick.get_axis(2),
+        "rightY": joystick.get_axis(1),
+        "rightX":  joystick.get_axis(0),
+        "base": joystick.get_axis(4),
+        "grip": joystick.get_axis(5),
         "ghora": ghora,
         "upor": upor,
     }
@@ -107,25 +97,60 @@ def read_joystick_data():
     # Replace direct calls with values from joystick_values.
     leftY = joystick_values["leftY"]
     leftX = joystick_values["leftX"]
-
-    # Map from -1 to 1 to 1000 to 2000
-    leftY = int((leftY + 1) * 500 + 1000)
-    leftX = int((leftX + 1) * 500 + 1000)
-
-    # Apply 50-value radius deadzone to all axes
-    leftY = apply_deadzone(leftY)
-    leftX = apply_deadzone(leftX)
+    rightY = joystick_values["rightY"]
+    rightX = joystick_values["rightX"]
     grip = joystick_values["grip"]
     ghora = joystick_values["ghora"]
     upor = joystick_values["upor"]
     base = joystick_values["base"]
 
+    # Map from -1 to 1 to 1000 to 2000
+    leftY = int((leftY + 1) * 500 + 1000)
+    leftX = int((leftX + 1) * 500 + 1000)
+    rightY = int((rightY + 1) * 500 + 1000)
+    rightX = int((rightX + 1) * 500 + 1000)
+    grip = int((grip + 1) * 500 + 1000)
+    ghora = int((ghora + 1) * 500 + 1000)
+    upor = int((upor + 1) * 500 + 1000)
+    base = int((joystick_values["base"] + 1) * 500 + 1000)
+
+    # Apply 50-value radius deadzone to all axes
+    leftY = apply_deadzone(leftY)
+    leftX = apply_deadzone(leftX)
+    rightY = apply_deadzone(rightY)
+    rightX = apply_deadzone(rightX)
+    grip = apply_deadzone(grip)
+    ghora = apply_deadzone(ghora)
+    upor = apply_deadzone(upor)
+    base = apply_deadzone(base)
+
     # Handle 'p' key for toggle
 
     # Calculate motor speeds
+    (leftMotor, rightMotor) = (rightX, rightY)
 
     # Format data as string
     s = "["
+
+    # Add motor values with flag checking for changes
+    if abs(1500 - leftMotor) > DEADZONE:
+        flag3[0] = 0
+        s += "0" + str(leftMotor) + ","
+    elif flag3[0] == 0:
+        flag3[0] = 1
+        s += "0" + str(1500) + ","
+    else:
+        s += "0" + str(1500) + ","
+
+    if abs(1500 - rightMotor) > DEADZONE:
+        flag3[1] = 0
+        s += "1" + str(rightMotor) + ","
+    elif flag3[1] == 0:
+        flag3[1] = 1
+        s += "1" + str(1500) + ","
+    else:
+        s += "1" + str(1500) + ","
+
     if (abs(1500-leftX) > DEADZONE):
         flag3[2] = 0
         s += "2" + str(leftX) + ","
@@ -175,6 +200,7 @@ def read_joystick_data():
         s += "7" + str(1500) + ","
     else:
         s += "7" + str(1500) + ","
+
     s += "]"
 
     # Clean up trailing comma if present
@@ -205,7 +231,7 @@ def transmitter_mode(port):
         print("No joystick detected.")
         sys.exit(1)
 
-    joystick = pygame.joystick.Joystick(1)
+    joystick = pygame.joystick.Joystick(0)
     joystick.init()
 
     print("Initialized joystick:", joystick.get_name())

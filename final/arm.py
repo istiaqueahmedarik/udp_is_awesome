@@ -97,7 +97,7 @@ def read_joystick_data():
     global open, open1, cnt1, cnt2, flag3, l_state
 
     pygame.event.pump()
-    joystick = pygame.joystick.Joystick(0)
+    joystick = pygame.joystick.Joystick(1)
 
     # Get joystick values using helper function.
     joystick_values = get_joystick_value(joystick)
@@ -108,17 +108,21 @@ def read_joystick_data():
     leftY = joystick_values["leftY"]
     leftX = joystick_values["leftX"]
 
-    # Map from -1 to 1 to 1000 to 2000
-    leftY = int((leftY + 1) * 500 + 1000)
-    leftX = int((leftX + 1) * 500 + 1000)
-
-    # Apply 50-value radius deadzone to all axes
-    leftY = apply_deadzone(leftY)
-    leftX = apply_deadzone(leftX)
     grip = joystick_values["grip"]
     ghora = joystick_values["ghora"]
     upor = joystick_values["upor"]
     base = joystick_values["base"]
+    # Map from -1 to 1 to 1000 to 2000
+    leftY = int((leftY + 1) * 500 + 1000)
+    leftX = int((leftX + 1) * 500 + 1000)
+    grip = int((grip + 1) * 500 + 1000)
+    ghora = int((ghora + 1) * 500 + 1000)
+    upor = int((upor + 1) * 500 + 1000)
+    base = int((base + 1) * 500 + 1000)
+
+    # Apply 50-value radius deadzone to all axes
+    leftY = apply_deadzone(leftY)
+    leftX = apply_deadzone(leftX)
 
     # Handle 'p' key for toggle
 

@@ -132,9 +132,9 @@ def read_joystick_data():
             tmp = joystick
             joystick = arm_joystick
             arm_joystick = tmp
-    elif (joystick is not None and arm_joystick is None):
-        arm_joystick = joystick
-        joystick = None
+    elif joystick is None:
+        print('must be connected normal_joystick')
+        return
 
     joystick_values = ""
     if joystick is not None:
@@ -169,6 +169,7 @@ def read_joystick_data():
     rightY = int((rightY + 1) * 500 + 1000)
     rightX = int((rightX + 1) * 500 + 1000)
     arm = int((arm + 1) * 500 + 1000)
+
     base = int((base + 1) * 500 + 1000)
     speed_mode = int((speed_mode + 1) * 500 + 1000)
     lifter = int((lifter + 1) * 500 + 1000)
@@ -371,7 +372,7 @@ def read_joystick_data():
     # Clean up trailing comma if present
     if s[len(s) - 2] == ',':
         s = s[:len(s) - 2] + ']'
-    if (arm != 1500):
+    if (arm == 1500):
         return "#"
     return "JOYSTICK:" + s
 

@@ -1,176 +1,88 @@
-#!/usr/bin/env python
-import cv2
-import threading
-import time
 import sys
-import pyudev
-
-# Multicast settings
-UDP_GROUP = "239.0.0.16"
-BASE_UDP_PORT = 1234
-MAX_CAMERAS = 10
-
-# GStreamer pipeline templates
-GST_TX_PIPE = (
-    'appsrc ! videoconvert ! video/x-raw,format=I420 ! '
-    'x264enc tune=zerolatency bitrate=500 speed-preset=superfast ! '
-    'rtph264pay config-interval=1 pt=96 ! '
-    'udpsink host={group} port={port} auto-multicast=true'
-)
-GST_RX_PIPE = (
-    'udpsrc multicast-group={group} port={port} caps="application/x-rtp,media=video,'
-    'encoding-name=H264,payload=96" ! '
-    'rtpjitterbuffer latency=100 ! rtph264depay ! avdec_h264 ! videoconvert ! appsink'
-)
-
-# Shared state
-frames = {}
-tx_lock = threading.Lock()
-assigned_ports = {}  # device_node -> port
-used_ports = set()
+import pygame
+import time
 
 
-def get_next_port():
-    for i in range(MAX_CAMERAS):
-        port = BASE_UDP_PORT + i
-        if port not in used_ports:
-            return port
-    return None
+def init_joystick():
+    pygame.init()
+    pygame.joystick.init()
+    count = pygame.joystick.get_count()
+    if count == 0:
+        print("No joystick detected. Connect one and try again.")
+        sys.exit(1)
+    js = pygame.joystick.Joystick(0)
+    js.init()
+    print(f"Using joystick: {js.get_name()}")
+    return js
 
 
-def start_tx_stream(device_node):
-    port = get_next_port()
-    if port is None:
-        print(f"[TX] No available port for {device_node}")
-        return
-    with tx_lock:
-        used_ports.add(port)
-        assigned_ports[device_node] = port
-
-    print(f"[TX] {device_node} → udp://{UDP_GROUP}:{port}")
-    cap = cv2.VideoCapture(device_node, cv2.CAP_V4L2)
-    if not cap.isOpened():
-        print(f"[TX] Cannot open {device_node}, releasing port {port}")
-        with tx_lock:
-            used_ports.remove(port)
-            del assigned_ports[device_node]
-        return
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    pipeline = GST_TX_PIPE.format(group=UDP_GROUP, port=port)
-    writer = cv2.VideoWriter(pipeline, cv2.CAP_GSTREAMER, 0, fps, (width, height))
-    if not writer.isOpened():
-        print(f"[TX] GStreamer failed for {device_node}, releasing port {port}")
-        cap.release()
-        with tx_lock:
-            used_ports.remove(port)
-            del assigned_ports[device_node]
-        return
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
+def calibrate_dpad(js):
+    """
+    Press each D‑pad direction when prompted to record which button index it triggers.
+    """
+    print("\n=== DPAD CALIBRATION ===")
+    mapping = {}
+    for direction in ("up", "right", "down", "left"):
+        input(
+            f"  Press and hold the D‑pad {direction.upper()} then hit Enter…")
+        pygame.event.pump()
+        # scan all buttons for one currently pressed
+        for b in range(js.get_numbuttons()):
+            if js.get_button(b):
+                mapping[direction] = b
+                print(f"    → {direction} mapped to button {b}")
                 break
-            writer.write(frame)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cap.release()
-        writer.release()
-        print(f"[TX] Stopped {device_node}, freeing port {port}")
-        with tx_lock:
-            used_ports.remove(port)
-            del assigned_ports[device_node]
+        else:
+            print("    ! No button detected—try again")
+            return calibrate_dpad(js)
+        time.sleep(0.2)  # debounce
+    print("Calibration complete:", mapping)
+    return mapping
 
 
-def monitor_cameras():
-    context = pyudev.Context()
-    monitor = pyudev.Monitor.from_netlink(context)
-    monitor.filter_by('video4linux')
-    for device in monitor:
-        if device.action == 'add' and device.device_node:
-            start_tx_stream(device.device_node)
-        elif device.action == 'remove' and device.device_node:
-            with tx_lock:
-                port = assigned_ports.pop(device.device_node, None)
-                if port:
-                    used_ports.discard(port)
-                    print(f"[TX] Device {device.device_node} removed, freed port {port}")
-
-
-def tx_mode():
-    # Initial scan
-    for idx in range(MAX_CAMERAS * 2):
-        if len(assigned_ports) >= MAX_CAMERAS:
-            break
-        device_node = f"/dev/video{idx}"
-        start_tx_stream(device_node)
-        time.sleep(0.05)
-    # Start monitor thread
-    t = threading.Thread(target=monitor_cameras, daemon=True)
-    t.start()
-    print(f"[TX] Active streams: {assigned_ports}. Ctrl+C to exit.")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("[TX] Exiting.")
-
-
-def rx_stream(port):
-    pipeline = GST_RX_PIPE.format(group=UDP_GROUP, port=port)
-    cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
-    if not cap.isOpened():
-        return
-    print(f"[RX] Listening udp://{UDP_GROUP}:{port}")
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            with tx_lock:
-                frames[port] = frame
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cap.release()
-
-
-def rx_mode():
-    threads = []
-    for i in range(MAX_CAMERAS):
-        port = BASE_UDP_PORT + i
-        t = threading.Thread(target=rx_stream, args=(port,), daemon=True)
-        threads.append(t)
-        t.start()
-        time.sleep(0.05)
-    print(f"[RX] Ready to receive on ports {BASE_UDP_PORT}-{BASE_UDP_PORT+MAX_CAMERAS-1}. ESC to exit.")
-    win = 'Multicam RX'
-    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-    try:
-        while True:
-            with tx_lock:
-                data = list(frames.items())
-            for port, img in data:
-                cv2.imshow(f"Port {port}", img)
-            if cv2.waitKey(30) == 27:
-                break
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cv2.destroyAllWindows()
+def read_state(js, dpad_map):
+    pygame.event.pump()
+    # Axes
+    axes = [js.get_axis(i) for i in range(js.get_numaxes())]
+    # Buttons
+    buttons = {i: js.get_button(i) for i in range(js.get_numbuttons())}
+    # Hats (if any)
+    hats = {i: js.get_hat(i) for i in range(js.get_numhats())}
+    # Fallback dpad via button mapping
+    dpad = {
+        'up':    bool(buttons.get(dpad_map['up'], False)),
+        'right': bool(buttons.get(dpad_map['right'], False)),
+        'down':  bool(buttons.get(dpad_map['down'], False)),
+        'left':  bool(buttons.get(dpad_map['left'], False)),
+    }
+    return axes, buttons, hats, dpad
 
 
 def main():
-    if len(sys.argv)!=2 or sys.argv[1] not in ('tx','rx'):
-        print(f"Usage: {sys.argv[0]} tx|rx")
-        sys.exit(1)
-    if sys.argv[1]=='tx':
-        tx_mode()
+    js = init_joystick()
+    # If the controller already has hats, you can skip calibration:
+    if js.get_numhats() == 0:
+        dmap = calibrate_dpad(js)
     else:
-        rx_mode()
+        # default Pygame hat API will work:
+        dmap = {}
+        print("Controller already reports hats directly; skipping calibration.")
+    print("\n=== Live input (Ctrl‑C to exit) ===")
+    try:
+        while True:
+            axes, buttons, hats, dpad = read_state(js, dmap)
+            # Display
+            print("\nAxes:", ["{:.2f}".format(a) for a in axes])
+            print("Buttons pressed:", [i for i, v in buttons.items() if v])
+            if hats:
+                print("Hats:", hats)
+            print("D‑pad (mapped):", dpad)
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nExiting…")
+    finally:
+        pygame.quit()
 
-if __name__=='__main__':
+
+if __name__ == "__main__":
     main()
-
