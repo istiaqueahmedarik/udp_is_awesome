@@ -72,8 +72,8 @@ def get_joystick_value(joystick):
         upor = -1
 
     return {
-        "leftY": joystick.get_axis(3),
-        "leftX": joystick.get_axis(2),
+        "leftY": -1*joystick.get_axis(2),
+        "leftX": -1*joystick.get_axis(3),
         "rightY": joystick.get_axis(1),
         "rightX":  joystick.get_axis(0),
     }
@@ -167,8 +167,8 @@ def read_joystick_data():
     rightY = int((rightY + 1) * 500 + 1000)
     rightX = int((rightX + 1) * 500 + 1000)
 
-    leftY = joystick_values1["leftY"]
-    leftX = joystick_values1["leftX"]
+    leftY = joystick_values["leftY"]
+    leftX = joystick_values["leftX"]
     if (arm is not None and arm.get_button(7) == 1):
         leftY = 0
 
@@ -190,15 +190,28 @@ def read_joystick_data():
     else:
         base = 1500+(abs(1500-base))
 
-    if (leftX > 1500):
-        leftX = 1500-(abs(1500-leftX))
+    # if (leftX > 1500):
+    #     leftX = 1500-(abs(1500-leftX))
+    # else:
+    #     leftX = 1500+(abs(1500-leftX))
+
+    if (leftY > 1500):
+        leftY = 1500-(abs(1500-leftY))
     else:
-        leftX = 1500+(abs(1500-leftX))
+        leftY = 1500+(abs(1500-leftY))
 
     # Apply 50-value radius deadzone to all axes
     leftY = apply_deadzone(leftY)
     leftX = apply_deadzone(leftX, radius=200)
+    tmp = leftY
+    leftY = leftX
+    leftX = tmp
     base = apply_deadzone(base, center=1500, radius=100)
+    if (base > 1500):
+        base = 1500-abs(1500-base)
+    else:
+        base = 1500+abs(1500-base)
+
     mode = 1500
     if (arm is not None):
         mode = arm.get_button(9)
@@ -295,7 +308,7 @@ def read_joystick_data():
     else:
         arm = 1500
     if (arm == 1500):
-        return "JOYSTICK:[01500,11500,21500,31500]"
+        return "#"
     return "JOYSTICK:"+s
 
 
@@ -346,6 +359,7 @@ def receiver_mode(port):
             data, addr = sock.recvfrom(1024)
             joy_data = data.decode('utf-8')
             print(f"Received from {addr}: {joy_data}")
+
     except KeyboardInterrupt:
         print("Exiting receiver mode...")
 
